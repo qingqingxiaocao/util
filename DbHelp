@@ -1,0 +1,193 @@
+package com.kaishengit.util;
+
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+import org.apache.commons.dbcp.BasicDataSource;
+
+public class DbHelp<T> {
+
+	private static String DRIVER ;//= "com.mysql.jdbc.Driver";
+	private static String URL; //= "jdbc:mysql://localhost:3306/atm?characterEncoding=UTF-8";
+	private static String USER;// = "root";
+	private static String PASSWORD;// = "123";
+	private static BasicDataSource dataSource = null;
+	static{
+		
+		Properties prop = new Properties();
+		try {
+			prop.load(DbHelp.class.getClassLoader().getResourceAsStream("dbconfig.properties"));
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		DRIVER = prop.getProperty("jdbc.driver");
+		URL = prop.getProperty("jdbc.url");
+		USER = prop.getProperty("jdbc.username");
+		PASSWORD = prop.getProperty("jdbc.password");
+		
+		//数据源（数据库的链接池）
+		dataSource = new BasicDataSource();
+		dataSource.setDriverClassName(DRIVER);
+		dataSource.setUrl(URL);
+		dataSource.setUsername(USER);
+		dataSource.setPassword(PASSWORD);
+		
+		dataSource.setInitialSize(5);
+		dataSource.setMaxActive(10);
+		dataSource.setMaxWait(5000);
+		dataSource.setMinIdle(5);
+	}
+	public Connection getConnection(){
+	
+		try {
+			Class.forName(DRIVER);
+			Connection conn = dataSource.getConnection();//DriverManager.getConnection(URL, USER, PASSWORD);
+			return conn;
+		} 
+		
+		catch (ClassNotFoundException e) {
+			e.printStackTrace();
+		}
+		catch (SQLException e) {
+			//e.printStackTrace();
+			throw new DataAccessException(e,"执行连接异常");	
+			}
+		return null;
+	}
+	
+	public void executeUpdate(String sql,Object... params) {
+		PreparedStatement stat = null;
+		Connection conn = getConnection();
+		try {
+			stat = conn.prepareStatement(sql);
+			
+			for (int i = 0; i < params.length; i++) {
+				stat.setObject(i+1, params[i]);
+			}
+			stat.executeUpdate();
+		} catch (SQLException e) {
+			//e.printStackTrace();
+			throw new DataAccessException(e,"执行"+ sql + "语句异常");
+		} finally {
+			DbHelp.close(stat, conn);
+		}
+	}
+	
+	public T queryForObject(String sql,RowMapper<T> rowMapper,Object...params) {
+		Connection conn = getConnection();
+		PreparedStatement stat = null;
+		ResultSet rs = null;
+		T obj = null;
+		
+		try {
+			stat = conn.prepareStatement(sql);
+			for (int i = 0; i < params.length; i++) {
+				stat.setObject(i+1, params[i]);
+			}
+			
+			rs = stat.executeQuery();
+			
+			if(rs.next()) {
+				obj = rowMapper.mapRow(rs);
+			}
+		} catch (SQLException e) {
+			throw new DataAccessException(e,"执行"+ sql +"语句异常");
+		} finally {
+			DbHelp.close(rs, stat, conn);
+		}
+		return obj;
+	}
+	public List<T> queryForList(String sql,RowMapper<T> rowMapper,Object...params) {
+		Connection conn = getConnection();
+		PreparedStatement stat = null;
+		ResultSet rs = null;
+		List<T> list = new ArrayList<T>();
+		
+		try {
+			stat = conn.prepareStatement(sql);
+			for (int i = 0; i < params.length; i++) {
+				stat.setObject(i+1, params[i]);
+			}
+			
+			rs = stat.executeQuery();
+			
+			while(rs.next()) {
+				T obj = rowMapper.mapRow(rs);
+				list.add(obj);
+			}
+		} catch (SQLException e) {
+			//e.printStackTrace();
+			throw new DataAccessException(e,"执行"+ sql + "语句异常");
+		} finally {
+			DbHelp.close(rs, stat, conn);
+		}
+		return list;
+	}
+	
+	public static void close(Statement stat,Connection conn) {
+		close(null,stat,conn);
+	}
+
+	public static void close(ResultSet rs, Statement stat,
+			Connection conn) {
+		try {
+			if(rs != null) {
+				rs.close();
+			}
+		} catch (SQLException e) {
+			//e.printStackTrace();
+			throw new DataAccessException(e,"关闭resultset异常");
+		} finally {
+			try {
+				if(stat != null) {
+					stat.close();
+				}
+			} catch (SQLException e) {
+				//e.printStackTrace();
+				throw new DataAccessException(e,"关闭statement异常");
+			} finally {
+				try {
+					if(conn != null) {
+						conn.close();
+					}
+				} catch (SQLException e) {
+					//e.printStackTrace();
+					throw new DataAccessException(e,"数据库连接异常");
+				}
+			}
+		}
+		
+	}
+
+	public Long queryForCount(String sql,Object...params) {
+		Connection conn = getConnection();
+		PreparedStatement stmt = null;
+		ResultSet rs = null;
+		T obj = null;
+		Long result = 0L;
+		
+		try {
+			stmt = conn.prepareStatement(sql);
+			for(int i = 0 ; i < params.length;i++){
+				stmt.setObject(i+1, params[i]);
+			}
+			rs = stmt.executeQuery();
+			if(rs.next()){
+				
+				result = rs.getLong(1);
+			}
+		} catch (SQLException e) {
+			new DataAccessException(e,"执行"+sql+"语句异常");
+		}finally{
+			close(rs,stmt,conn);
+		}
+		return result;
+	}
+	
+}
